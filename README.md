@@ -1,4 +1,4 @@
-# CSCE-642: Deep Reinforcement Learning
+# (forked) CSCE-642: Deep Reinforcement Learning
 
 ## Setup
 
