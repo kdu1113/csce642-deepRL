@@ -18,3 +18,20 @@ For setting up the environment, we recommend using conda + pip or virtual env + 
 ```bash
 pip install -r requirements.txt
 ```
+
+# How to sync upstream
+(Add a new remote upstream repository)
+```bash
+git remote add upstream https://github.com/Pi-Star-Lab/csce642-deepRL.git 
+```
+
+(Sync your fork)
+```bash
+git fetch upstream
+```
+```bash
+git checkout master
+```
+```bash
+git merge upstream/master
+```
