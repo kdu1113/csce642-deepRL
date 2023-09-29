@@ -1,9 +1,8 @@
 # Licensing Information:  You are free to use or extend this codebase for
 # educational purposes provided that (1) you do not distribute or publish
-# solutions, (2) you retain this notice, and (3) inform Guni Sharon at 
-# guni@tamu.edu regarding your usage (relevant statistics is reported to NSF).
-# The development of this assignment was supported by NSF (IIS-2238979).
-# Contributors:
+# solutions, (2) you retain this notice, and (3) you provide the following
+# attribution:
+# This CSCE-689 RL assignment codebase was developed at Texas A&M University.
 # The core code base was developed by Guni Sharon (guni@tamu.edu).
 
 import numpy as np
@@ -23,15 +22,15 @@ class PolicyIteration(AbstractSolver):
 
     def train_episode(self):
         """
-            Run a single Policy iteration. Evaluate and improve the policy.
+            Run a single Policy iteration. Evaluate and improves the policy.
 
             Use:
                 self.policy: [S, A] shaped matrix representing the policy.
                 self.env: OpenAI environment.
                     env.P represents the transition probabilities of the environment.
                     env.P[s][a] is a list of transition tuples (prob, next_state, reward, done).
-                    env.observation_space.n is the number of states in the environment.
-                    env.action_space.n is the number of actions in the environment.
+                    env.nS is a number of states in the environment.
+                    env.nA is a number of actions in the environment.
                 self.options.gamma: Gamma discount factor.
                 np.eye(self.env.action_space.n)[action]
         """
@@ -42,12 +41,26 @@ class PolicyIteration(AbstractSolver):
         # For each state...
         for s in range(self.env.observation_space.n):
             # Find the best action by one-step lookahead
-            # Ties are resolved in favor of actions with lower indexes (Hint: use max/argmax directly).
+            # Ties are resolved by returning the first action with maximum value (Hint: use max/argmax directly).
 
             ################################
             #   YOUR IMPLEMENTATION HERE   #
             ################################
+            max_action = None
+            max_value = float("-inf")
 
+            for action in range(self.env.action_space.n):
+                action_value = 0
+                for prob, next_state, reward, done in self.env.P[s][action]:
+                    action_value += prob * (reward + self.options.gamma * self.V[next_state])
+                if action_value > max_value:
+                    max_value = action_value
+                    max_action = action
+
+            # clear state s policy
+            self.policy[s][:] = 0
+            # set policy
+            self.policy[s][max_action] = 1.0
 
         # In DP methods we don't interact with the environment so we will set the reward to be the sum of state values
         # and the number of steps to -1 representing an invalid value
@@ -59,14 +72,14 @@ class PolicyIteration(AbstractSolver):
 
     def one_step_lookahead(self, state):
         """
-        Helper function to calculate the value for all actions from a given state.
+        Helper function to calculate the value for all action in a given state.
 
         Args:
             state: The state to consider (int)
-            V: The value to use as an estimator, Vector of length env.observation_space.n
+            V: The value to use as an estimator, Vector of length env.nS
 
         Returns:
-            A vector of length env.action_space.n containing the expected value of each action.
+            A vector of length env.nA containing the expected value of each action.
         """
         A = np.zeros(self.env.action_space.n)
         for a in range(self.env.action_space.n):
@@ -83,14 +96,33 @@ class PolicyIteration(AbstractSolver):
             self.policy: [S, A] shaped matrix representing the policy.
             self.env: OpenAI env. env.P represents the transition probabilities of the environment.
                 env.P[s][a] is a list of transition tuples (prob, next_state, reward, done).
-                env.observation_space.n is the number of states in the environment.
-                env.action_space.n is the number of actions in the environment.
+                env.nS is a number of states in the environment.
+                env.nA is a number of actions in the environment.
             self.options.gamma: Gamma discount factor.
             np.linalg.solve(a, b) # Won't work with discount factor = 0!
         """
         ################################
         #   YOUR IMPLEMENTATION HERE   #
         ################################
+        # Vπ(s) = ∑s` P(s`|s,π(s))(R(s,π(s),s`) + rV*(s`))
+        # A = np.array(r*numof(s`) + ∑s` P(s`|s,π(s))(R(s,π(s),s`))
+        # B = np.array([Vπ(s)])
+        # V*(s`) = np.linalg.solve(A,B)
+        # self.V[s`] = V*(s`)
+
+        num_of_states = self.env.observation_space.n
+        A = np.zeros((num_of_states, num_of_states))
+        B = np.zeros(num_of_states)
+
+        for state in range(num_of_states):
+            # get action from current policy
+            action = np.argmax(self.policy[state])
+            # set coefficients for the equation
+            for prob, next_state, reward, done in self.env.P[state][action]:
+                A[state, next_state] += prob * self.options.gamma
+                B[state] += prob * reward
+        # solve equation
+        self.V = np.linalg.solve(-np.identity(num_of_states) + A, -B)
 
     def create_greedy_policy(self):
         """
