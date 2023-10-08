@@ -67,6 +67,41 @@ class MonteCarlo(AbstractSolver):
         #   YOUR IMPLEMENTATION HERE   #
         ################################
 
+        # (a) Generate an episode following current policy
+        for t in range(self.options.steps):
+            probs = self.policy(state)
+            action = np.random.choice(np.arange(len(probs)), p=probs)
+            # Proceed one step
+            next_state, reward, done, _ = self.step(action)
+            # Append the episode
+            episode.append((state, action, reward))
+            if done:
+                break
+            state = next_state
+
+        # (b) For each pair <s,a> in the episode
+        G = 0
+        for transition in reversed(episode):
+            state, action, reward = transition
+            G = discount_factor * G + reward
+            # append G to returns_sum
+            self.returns_sum[(state, action)] += G
+            self.returns_count[(state, action)] += 1
+            # update Q value with the average of returns_sum
+            self.Q[state][action] = self.returns_sum[(state, action)] / self.returns_count[(state, action)]
+
+        # (c) For each s in the episode
+        # epsilon = self.options.epsilon
+        # for transition in reversed(episode):
+        #     state, action, reward = transition
+        #     # A_star is argmax_a Q(s,a)
+        #     A_star = np.argmax(self.Q[state])
+        #     for a in range(self.env.action_space.n):
+        #         if a == A_star:
+        #             self.policy(state)[a] = 1.0 - epsilon + epsilon/self.env.action_space.n
+        #         else:
+        #             self.policy(state)[a] = epsilon/self.env.action_space.n
+
     def __str__(self):
         return "Monte Carlo"
 
@@ -91,7 +126,13 @@ class MonteCarlo(AbstractSolver):
             ################################
             #   YOUR IMPLEMENTATION HERE   #
             ################################
-
+            epsilon = self.options.epsilon
+            # init every action's prob as epsilon/nA
+            action_probs = np.ones(nA, dtype=float) * epsilon / nA
+            # set best action's prob as 1 - epsilon + (epsilon / nA)
+            A_star = np.argmax(self.Q[observation])
+            action_probs[A_star] = 1.0 - epsilon + epsilon / nA
+            return action_probs
         return policy_fn
 
     def create_greedy_policy(self):
@@ -110,7 +151,7 @@ class MonteCarlo(AbstractSolver):
             ################################
             #   YOUR IMPLEMENTATION HERE   #
             ################################
-
+            return np.argmax(self.Q[state])
 
         return policy_fn
 
@@ -164,7 +205,42 @@ class OffPolicyMC(MonteCarlo):
         ################################
         #   YOUR IMPLEMENTATION HERE   #
         ################################
-        
+        for t in range(self.options.steps):
+            # Get random action following behavior probability
+            b_action_probs = self.behavior_policy(state)
+            action = np.random.choice(np.arange(len(b_action_probs)), p=b_action_probs)
+            # Go one step
+            next_state, reward, done, _ = self.step(action)
+            # append the episode
+            episode.append((state, action, reward))
+            if done:
+                break
+            state = next_state
+
+        # Initialize G and W
+        G = 0
+        W = 1.0
+
+        for transition in reversed(episode):
+            state, action, reward = transition
+
+            # Update G
+            G = self.options.gamma * G + reward
+
+            # Update Cumulative Sum and Q Value
+            self.C[state][action] += W
+            self.Q[state][action] += (W / self.C[state][action]) * (G - self.Q[state][action])
+
+            # No need to update target_policy because it gets the argmax_a Q(S,a) deterministically.
+
+            # action doesn't match target_policy.
+            if action != self.target_policy(state):
+                break
+
+            # Update the weighted importance sampling ratio
+            behavior_prob = self.behavior_policy(state)[action]
+            target_prob = 1.0  # deterministic
+            W *= target_prob / behavior_prob
 
     def create_random_policy(self):
         """
