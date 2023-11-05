@@ -101,7 +101,21 @@ class DQN(AbstractSolver):
         ################################
         #   YOUR IMPLEMENTATION HERE   #
         ################################
+        epsilon = self.options.epsilon
+        if np.random.rand() < epsilon:
+            # Explore: 
+            # return action_porbabilities with equal probabaility for each action.
+            action_probabilities = np.ones(self.env.action_space.n) / self.env.action_space.n
+        else:
+            # Exploit: 
+            # return action with the highest Q-value
+            state = torch.as_tensor(state, dtype=torch.float32)
+            q_values = self.model(state)
+            max_action = torch.argmax(q_values).item()
+            action_probabilities = np.zeros(self.env.action_space.n)
+            action_probabilities[max_action] = 1.0  # Probability 1.0 for the best action
 
+        return action_probabilities
 
     def compute_target_values(self, next_states, rewards, dones):
         """
@@ -113,7 +127,12 @@ class DQN(AbstractSolver):
         ################################
         #   YOUR IMPLEMENTATION HERE   #
         ################################
-
+        next_q_values = self.target_model(next_states)
+        # Choose the maximum Q-value for each next state
+        max_next_q_values, _ = next_q_values.max(dim=1)
+        # Calculate the target Q-values using the Bellman equation
+        target_q_values = rewards + (1 - dones) * self.options.gamma * max_next_q_values
+        return target_q_values
 
     def replay(self):
         """
@@ -188,6 +207,61 @@ class DQN(AbstractSolver):
             ################################
             #   YOUR IMPLEMENTATION HERE   #
             ################################
+            action_probabilities = self.epsilon_greedy(state)
+            action = np.random.choice(self.env.action_space.n, p=action_probabilities)
+
+            # execute the selected action
+            next_state, reward, done, _ = self.env.step(action)
+
+            # store transition in replay buffer
+            self.memorize(state, action, reward, next_state, done)
+
+            # Perform replay and Q-network updates
+            self.n_steps += 1
+            if self.n_steps % self.options.replay_frequency == 0:
+                if len(self.replay_memory) >= self.options.batch_size:
+                    self.replay()
+
+            # Update the target network if necessary
+            if self.n_steps % self.options.update_target_estimator_every == 0:
+                self.update_target_model()
+
+            # Update Q-values using Q-learning with experience replay
+            if len(self.replay_memory) >= self.options.batch_size:
+                minibatch = random.sample(self.replay_memory, self.options.batch_size)
+                states, actions, rewards, next_states, dones = zip(*minibatch)
+
+                # Calculate target Q-values using Q-learning update
+                target_q_values = []
+                for i in range(self.options.batch_size):
+                    if dones[i]:
+                        target_q = rewards[i]
+                    else:
+                        next_state_tensor = torch.as_tensor(next_states[i], dtype=torch.float32)
+                        next_q_values = self.target_model(next_state_tensor)
+                        target_q = rewards[i] + self.options.gamma * torch.max(next_q_values).item()
+                    target_q_values.append(target_q)
+
+                # Update the Q-network
+                states_tensor = torch.as_tensor(states, dtype=torch.float32)
+                action_indices = torch.as_tensor(actions, dtype=torch.int64)
+                q_values = self.model(states_tensor)
+                q_values[range(self.options.batch_size), action_indices] = torch.as_tensor(target_q_values, dtype=torch.float32)
+
+                # Optimize the Q-network
+                self.optimizer.zero_grad()
+                loss_q = self.loss_fn(q_values, self.model(states_tensor))
+                loss_q.backward()
+                self.optimizer.step()
+
+            state = next_state
+            total_reward += reward
+
+            if done:
+                break
+
+        return total_reward
+
 
 
     def __str__(self):
